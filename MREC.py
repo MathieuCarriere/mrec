@@ -330,16 +330,16 @@ def MREC(X1, X2, threshold=10, n_points=100, q_method="KMeans", metric="euclidea
 		indices1, indices2 = quantize1.indices_, quantize2.indices_
 		subX1, subX2 = X1[indices1, :], X2[indices2, :]
 		if backend_params["mode"] is not "WS":
-			metric = backend_params["metric"] if backend_params["mode"] is not "MXS" else backend_params["metric"][0]  
-			if type(metric) == str:
-				if metric == "precomputed":	D1, D2 = D1_full[:, indices1][indices1, :], D2_full[:, indices2][indices2, :]
-				else:	D1, D2 = pairwise_distances(subX1, metric=metric), pairwise_distances(subX2, metric=metric)
+			metr = backend_params["metric"] if backend_params["mode"] is not "MXS" else backend_params["metric"][0]  
+			if type(metr) == str:
+				if metr == "precomputed":	D1, D2 = D1_full[:, indices1][indices1, :], D2_full[:, indices2][indices2, :]
+				else:	D1, D2 = pairwise_distances(subX1, metric=metr), pairwise_distances(subX2, metric=metr)
 			else:
-				if metric[0] == "precomputed":	D1 = D1_full[:, indices1][indices1, :]
-				else:	D1 = pairwise_distances(subX1, metric=metric[0])
+				if metr[0] == "precomputed":	D1 = D1_full[:, indices1][indices1, :]
+				else:	D1 = pairwise_distances(subX1, metric=metr[0])
 
-				if metric[1] == "precomputed":	D2 = D2_full[:, indices2][indices2, :]
-				else:	D2 = pairwise_distances(subX2, metric=metric[1])
+				if metr[1] == "precomputed":	D2 = D2_full[:, indices2][indices2, :]
+				else:	D2 = pairwise_distances(subX2, metric=metr[1])
 
 		if backend_params["mode"] == "MXS":	Z = Z_full[indices1,:][:,indices2] if backend_params["metric"][1] == "precomputed" else pairwise_distances(subX1, subX2, metric=backend_params["metric"][1])
 		if backend_params["mode"] == "WS":	Z = Z_full[indices1,:][:,indices2] if backend_params["metric"] == "precomputed" else pairwise_distances(subX1, subX2, metric=backend_params["metric"])
