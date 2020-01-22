@@ -178,7 +178,7 @@ def gwC_cplex(D1, D2, eng, maxtime=120):
 	eng.workspace["D1"] = D1.tolist()
 	eng.workspace["D2"] = D2.tolist()
 	eng.workspace["maxtime"] = maxtime
-	eng.run("gwCcplex.m", nargout=0)
+	eng.run("/home/ubuntu/Documents/code/mrec/gwCcplex.m", nargout=0)
 	Y = np.array(eng.workspace['X'])
 	M = Y[:,-1]
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n1, dtype=np.int32)]
