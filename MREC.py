@@ -240,42 +240,64 @@ class Quantization(BaseEstimator, TransformerMixin):
 		return self
 
 
-def distortion_score(X1, X2, gamma, metric="euclidean", mode=2):
+def distortion_score(X1=None, X2=None, X3=None, gamma=None, metric="euclidean", mode=2, dist_type="W", alpha=.5):
 	"""
 	Compute the metric distortion associated to a matching between two datasets.
 
 	Parameters:
 		X1 (array of shape [num points 1, num dimensions]): first point cloud
 		X2 (array of shape [num points 2, num dimensions]): second point cloud
+                X3 (array of shape [num points 1, num points 2]): pairwise distances between first and second point clouds
 		gamma (array of shape [num points 1, num points 2]): probabilistic matching between X1 and X2
 		metric (str): metric to use in order to compute the distortion
 		mode (int): 1, 2 or 3. Method to use to compute the distortion. 1 is slow but does not require a lot of RAM, 3 is fast but it requires a lot of RAM. 2 is intermediate
+                dist_type (str): type of distortion to compute. Either "W", "GW", or "MX".
+                alpha (float): mixture coefficient. Only used if dist_type == "MX".
 	"""
-	if metric == "precomputed":	D1, D2 = X1, X2
-	else:	D1, D2 = pairwise_distances(X1, metric=metric), pairwise_distances(X2, metric=metric)
+	if dist_type == "GW" or dist_type == "MX":
+		if metric == "precomputed":	D1, D2 = X1, X2
+		else:	D1, D2 = pairwise_distances(X1, metric=metric), pairwise_distances(X2, metric=metric)
+	if dist_type == "W" or dist_type == "MX":
+		if metric == "precomputed":	D3 = X3
+		else:	D3 = pairwise_distances(X1, X2, metric=metric)
 
 	# Slowest, but does not need a lot of RAM
 	if mode == 1:
-		score = 0
-		for i in range(len(X1)):
-			for k in range(len(X2)):
-				for j in range(len(X1)):
-					for l in range(len(X2)):
-						score += gamma[i,k] * gamma[j,l] * np.abs(D1[i,j] - D2[k,l])
+		if dist_type == "GW" or dist_type == "MX":
+			scoreGW = 0
+			for i in range(len(X1)):
+				for k in range(len(X2)):
+					for j in range(len(X1)):
+						for l in range(len(X2)):
+							scoreGW += gamma[i,k] * gamma[j,l] * np.abs(D1[i,j] - D2[k,l])
+		if dist_type == "W" or dist_type == "MX":
+			scoreW = 0
+			for i in range(len(X1)):
+				for k in range(len(X2)):
+					scoreW += gamma[i,k] * D3[i,k]
 
 	# Intermediate
 	elif mode == 2:
-		score = 0
-		for i in range(len(X1)):
-			for k in range(len(X2)):
-				D = np.abs(np.expand_dims(D1[i,:], -1) - np.expand_dims(D2[k,:], 0))
-				score += gamma[i,k] * np.sum(np.multiply(gamma,D))
+		if dist_type == "GW" or dist_type == "MX":
+			scoreGW = 0
+			for i in range(len(X1)):
+				for k in range(len(X2)):
+					D = np.abs(np.expand_dims(D1[i,:], -1) - np.expand_dims(D2[k,:], 0))
+					scoreGW += gamma[i,k] * np.sum(np.multiply(gamma,D))
+		if dist_type == "W" or dist_type == "MX":
+			scoreW = np.sum(np.multiply(gamma, D3))
 
 	# Fastest, but needs a lot of RAM
 	elif mode == 3:
-		G = np.abs( np.expand_dims(np.expand_dims(D1,-1),-1) - np.expand_dims(np.expand_dims(D2,0),0) )
-		score = np.sum(np.multiply(gamma, np.tensordot(G, gamma, axes=([1,3],[0,1]))))
+		if dist_type == "GW" or dist_type == "MX":
+			G = np.abs( np.expand_dims(np.expand_dims(D1,-1),-1) - np.expand_dims(np.expand_dims(D2,0),0) )
+			scoreGW = np.sum(np.multiply(gamma, np.tensordot(G, gamma, axes=([1,3],[0,1]))))
+		if dist_type == "W" or dist_type == "MX":
+			scoreW = np.sum(np.multiply(gamma, D3))
 
+	if dist_type == "GW":	score = scoreGW
+	if dist_type == "W":	score = scoreW
+	if dist_type == "MX":	score = (1-alpha) * scoreGW + alpha * scoreW
 	return score
 
 def MREC(X1, X2, threshold=10, n_points=100, q_method="KMeans", metric="euclidean", backend_params={"mode": "GWNC", "num_iter": 3, "method": "L-BFGS-B"}, 
