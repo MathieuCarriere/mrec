@@ -38,7 +38,6 @@ def gwS(D1, D2, epsilon=5e-4, tol=1e-9, max_iter=1000):
 	return gw, mappings
 
 def wS(X1, X2, metric="euclidean", epsilon=5e-4, tol=1e-09, max_iter=1000, pairwise=np.empty([0,0])):
-	assert X1.shape[1] == X2.shape[1]
 	n1, n2 = X1.shape[0], X2.shape[0]
 	gamma = sinkhorn( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise, reg=epsilon, numItermax=max_iter, stopThr=tol) if metric=="precomputed" else sinkhorn( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise_distances(X1, X2, metric=metric), reg=epsilon )
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
