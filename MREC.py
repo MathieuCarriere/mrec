@@ -12,7 +12,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 from ot.gromov import entropic_gromov_wasserstein
 from ot.bregman import sinkhorn
-from ot import unif
+from ot.unbalanced import sinkhorn_unbalanced
 
 from scipy.optimize import minimize
 
@@ -40,6 +40,14 @@ def gwS(D1, D2, epsilon=5e-4, tol=1e-9, max_iter=1000):
 def wS(X1, X2, metric="euclidean", epsilon=5e-4, tol=1e-09, max_iter=1000, pairwise=np.empty([0,0])):
 	n1, n2 = X1.shape[0], X2.shape[0]
 	gamma = sinkhorn( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise, reg=epsilon, numItermax=max_iter, stopThr=tol) if metric=="precomputed" else sinkhorn( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise_distances(X1, X2, metric=metric), reg=epsilon )
+	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
+	for i in range(n1):	mappings[0][i] = np.argmax(gamma[i,:])
+	for i in range(n2):	mappings[1][i] = np.argmax(gamma[:,i])
+	return gamma, mappings
+
+def uwS(X1, X2, metric="euclidean", epsilon=5e-4, delta=5e-4, tol=1e-09, max_iter=1000, pairwise=np.empty([0,0])):
+	n1, n2 = X1.shape[0], X2.shape[0]
+	gamma = sinkhorn_unbalanced( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise, reg=epsilon, reg_m=delta, numItermax=max_iter, stopThr=tol) if metric=="precomputed" else sinkhorn_unbalanced( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise_distances(X1, X2, metric=metric), reg=epsilon, reg_m=delta )
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
 	for i in range(n1):	mappings[0][i] = np.argmax(gamma[i,:])
 	for i in range(n2):	mappings[1][i] = np.argmax(gamma[:,i])
@@ -314,6 +322,7 @@ def MREC(X1, X2, threshold=10, n_points=100, q_method="KMeans", metric="euclidea
 		metric (str): distance to use for computing and comparing the centroids. It is either a single string or a pair of strings if the two datasets have different metrics
 		backend_params (dictionary): parameters used for the black box matching function. It has to contain a key called "mode" whose value is a string specifiying the method to use and the other required keys:
 			"WS" (entropy Wasserstein):  "metric" (string, metric to use between datasets), "epsilon" (float, entropy regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations)
+			"UWS" (unbalanced entropy Wasserstein): "metric" (string, metric to use between datasets), "epsilon" (float, entropy regularization term), "delta" (float, unbalanced regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations)
 			"GWS" (entropy Gromov-Wasserstein): "metric" ((pair of) string, metrics to use for each dataset), "epsilon" (float, entropy regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations) 
 			"MXS" (entropy weighted sum of Wasserstein and Gromov-Wasserstein): "metric" (pair of (pair of) string, metrics to use for each dataset, for Wasserstein and Gromov-Wasserstein costs), "alpha" (float (between 0. and 1.), weight of Wasserstein cost), "epsilon" (float, entropy regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations)
 			"GWNC" (non convex approximation of Gromov-Wasserstein): "num_iter" (int, number of non convex iterations), "sigma_m_0" (float, see https://arxiv.org/pdf/1610.05214.pdf), "mu" (float, see https://arxiv.org/pdf/1610.05214.pdf), "method" (string, optimization method, one of the methods proposed in scipy.optimize.minimize)
@@ -350,7 +359,7 @@ def MREC(X1, X2, threshold=10, n_points=100, q_method="KMeans", metric="euclidea
 		quantize2.fit(X2, D2_full)
 		indices1, indices2 = quantize1.indices_, quantize2.indices_
 		subX1, subX2 = X1[indices1, :], X2[indices2, :]
-		if backend_params["mode"] is not "WS":
+		if backend_params["mode"] is not "WS" and backend_params["mode"] is not "UWS":
 			metr = backend_params["metric"] if backend_params["mode"] is not "MXS" else backend_params["metric"][0]  
 			if type(metr) == str:
 				if metr == "precomputed":	D1, D2 = D1_full[:, indices1][indices1, :], D2_full[:, indices2][indices2, :]
@@ -363,13 +372,14 @@ def MREC(X1, X2, threshold=10, n_points=100, q_method="KMeans", metric="euclidea
 				else:	D2 = pairwise_distances(subX2, metric=metr[1])
 
 		if backend_params["mode"] == "MXS":	Z = Z_full[indices1,:][:,indices2] if backend_params["metric"][1] == "precomputed" else pairwise_distances(subX1, subX2, metric=backend_params["metric"][1])
-		if backend_params["mode"] == "WS":	Z = Z_full[indices1,:][:,indices2] if backend_params["metric"] == "precomputed" else pairwise_distances(subX1, subX2, metric=backend_params["metric"])
+		if backend_params["mode"] == "WS" or backend_params["mode"] == "UWS":	Z = Z_full[indices1,:][:,indices2] if backend_params["metric"] == "precomputed" else pairwise_distances(subX1, subX2, metric=backend_params["metric"])
 
 		backend_params_wo_mode = {k: v for (k,v) in iter(backend_params.items()) if k != "mode"}
 		backend_params_wo_mode_wo_metric = {k: v for (k,v) in iter(backend_params_wo_mode.items()) if k != "metric"}
 
 		if   backend_params["mode"] == "GWS":	gam, mapps = gwS(D1, D2, **backend_params_wo_mode_wo_metric)
 		elif backend_params["mode"] == "WS":	gam, mapps = wS(subX1, subX2, pairwise=Z, **backend_params_wo_mode)
+		elif backend_params["mode"] == "UWS":	gam, mapps = uwS(subX1, subX2, pairwise=Z, **backend_params_wo_mode)
 		elif backend_params["mode"] == "GWNC":	gam, mapps = gwNC(D1, D2, **backend_params_wo_mode_wo_metric)
 		elif backend_params["mode"] == "GWC_sdpnal":	gam, mapps = gwC_sdpnal(D1, D2, **backend_params_wo_mode_wo_metric)
 		elif backend_params["mode"] == "GWC_cplex":	gam, mapps = gwC_cplex(D1, D2, **backend_params_wo_mode_wo_metric)
