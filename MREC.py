@@ -3,6 +3,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy
+from ot import unif
 numpy.set_printoptions(threshold=sys.maxsize)
 
 from sklearn.cluster import KMeans, AgglomerativeClustering
@@ -26,44 +27,40 @@ except ModuleNotFoundError: print("Warning: Matlab module not found, GWC_cplex a
 # Matching methods #
 ####################
 
-def gwS(D1, D2, epsilon=5e-4, tol=1e-9, max_iter=1000):
+# Gromov-Wasserstein
+def GWS(D1, D2, epsilon=5e-4, tol=1e-9, max_iter=1000):
 	D1 /= D1.max()
 	D2 /= D2.max()
 	n1, n2 = D1.shape[0], D2.shape[0]
 	d1, d2 = unif(n1), unif(n2)
-	gw = entropic_gromov_wasserstein(D1, D2, d1, d2, "square_loss", epsilon=epsilon, max_iter=max_iter, tol=tol)
-	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
-	for i in range(n1):	mappings[0][i] = np.argmax(gw[i,:])
-	for i in range(n2):	mappings[1][i] = np.argmax(gw[:,i])
-	return gw, mappings
-
-def wS(X1, X2, metric="euclidean", epsilon=5e-4, tol=1e-09, max_iter=1000, pairwise=np.empty([0,0])):
-	n1, n2 = X1.shape[0], X2.shape[0]
-	gamma = sinkhorn( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise, reg=epsilon, numItermax=max_iter, stopThr=tol) if metric=="precomputed" else sinkhorn( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise_distances(X1, X2, metric=metric), reg=epsilon )
+	gamma = entropic_gromov_wasserstein(D1, D2, d1, d2, "square_loss", epsilon=epsilon, max_iter=max_iter, tol=tol)
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
 	for i in range(n1):	mappings[0][i] = np.argmax(gamma[i,:])
 	for i in range(n2):	mappings[1][i] = np.argmax(gamma[:,i])
 	return gamma, mappings
 
-def uwS(X1, X2, metric="euclidean", epsilon=5e-4, delta=5e-4, tol=1e-09, max_iter=1000, pairwise=np.empty([0,0])):
+# Wasserstein
+def WS(X1, X2, metric="euclidean", epsilon=5e-4, tol=1e-09, max_iter=1000):
 	n1, n2 = X1.shape[0], X2.shape[0]
-	gamma = sinkhorn_unbalanced( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise, reg=epsilon, reg_m=delta, numItermax=max_iter, stopThr=tol) if metric=="precomputed" else sinkhorn_unbalanced( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise_distances(X1, X2, metric=metric), reg=epsilon, reg_m=delta )
+	gamma = sinkhorn( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise_distances(X1, X2, metric=metric), reg=epsilon )
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
 	for i in range(n1):	mappings[0][i] = np.argmax(gamma[i,:])
 	for i in range(n2):	mappings[1][i] = np.argmax(gamma[:,i])
 	return gamma, mappings
 
-def mixtureS(D1, D2, Z, alpha=.5, epsilon=5e-4, tol=1e-9, max_iter=1000):
+# Unbalanced Wasserstein
+def UWS(X1, X2, metric="euclidean", epsilon=5e-4, delta=5e-4, tol=1e-09, max_iter=1000):
+	n1, n2 = X1.shape[0], X2.shape[0]
+	gamma = sinkhorn_unbalanced( a=(1/n1) * np.ones(n1), b=(1/n2) * np.ones(n2), M=pairwise_distances(X1, X2, metric=metric), reg=epsilon, reg_m=delta )
+	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
+	for i in range(n1):	mappings[0][i] = np.argmax(gamma[i,:])
+	for i in range(n2):	mappings[1][i] = np.argmax(gamma[:,i])
+	return gamma, mappings
 
-	assert Z.shape[0] == D1.shape[0]
-	assert Z.shape[1] == D2.shape[0]
+# Mixture of Wasserstein and Gromov-Wasserstein
+def MXS(X1, X2, D1, D2, metric="euclidean", alpha=.5, epsilon=5e-4, tol=1e-9, max_iter=1000):
 
-	D1 /= D1.max()
-	D1 -= np.mean(D1)
-	D2 /= D2.max()
-	D2 -= np.mean(D2)
-	Z /= Z.max()
-	
+	Z = pairwise_distances(X1, X2, metric=metric)
 	n1, n2 = D1.shape[0], D2.shape[0]
 	p, q = (1/n1) * np.ones(n1), (1/n2) * np.ones(n2)
 	gamma = np.outer(p, q)
@@ -75,13 +72,11 @@ def mixtureS(D1, D2, Z, alpha=.5, epsilon=5e-4, tol=1e-9, max_iter=1000):
             
 			gamma_prev = gamma
 
-			tens = -np.dot(D1, gamma).dot(D2.T)
-			tens -= tens.min()
+			tens = np.dot(D1, gamma).dot(D2.T)
 			tens_all = (1-alpha) * tens + alpha * Z
 			gamma = sinkhorn(p, q, tens_all, epsilon)
         
 			if cpt % 10 == 0:	err = np.linalg.norm(gamma - gamma_prev)
-			# We can speed up the process by checking for the error only all the 10th iterations
 				
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n2, dtype=np.int32)]
 	for i in range(n1):	mappings[0][i] = np.argmax(gamma[i,:])
@@ -102,7 +97,8 @@ def lagrangian_hess(x, Gamma, A, b, sigma_m, lambda_m):
 	H = 2*Gamma + sigma_m*np.matmul(A.T,A)
 	return H
 
-def gwNC(D1, D2, num_iter=15, sigma_m_0=5., mu=10., method="L-BFGS-B", map_init=None, verbose=False):
+# Non-convex approximation of Gromov-Wasserstein
+def GWNC(D1, D2, num_iter=15, sigma_m_0=5., mu=10., method="L-BFGS-B", map_init=None, verbose=False):
 
 	n = D1.shape[0]
 	assert D2.shape[0] == n
@@ -147,11 +143,12 @@ def gwNC(D1, D2, num_iter=15, sigma_m_0=5., mu=10., method="L-BFGS-B", map_init=
 	mappings = [np.zeros(n, dtype=np.int32), np.zeros(n, dtype=np.int32)]
 	for i in range(n):	mappings[0][i] = np.argmax(minimizers[i*n:(i+1)*n, num_iter-1])
 	for i in range(n):	mappings[1][i] = np.argmax(minimizers[i::n, num_iter-1])
-	gam = np.reshape(minimizers[:,num_iter-1], [n,n])	
+	gamma = np.reshape(minimizers[:,num_iter-1], [n,n])	
 
-	return gam, mappings
+	return gamma, mappings
 
-def gwC_sdpnal(D1, D2, eng, use_birkhoff=False):
+# Convex approximation of Gromov-Wasserstein with SDPNAL solver
+def GWC_sdpnal(D1, D2, eng, use_birkhoff=False):
 
 	n1, n2 = len(D1), len(D2)
 	assert n1 == n2
@@ -171,10 +168,11 @@ def gwC_sdpnal(D1, D2, eng, use_birkhoff=False):
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n1, dtype=np.int32)]
 	for i in range(n1):	mappings[0][i] = np.argmax(M[i*n1:(i+1)*n1])
 	for i in range(n1):	mappings[1][i] = np.argmax(M[i::n1])
-	gam = np.reshape(M, [n1, n1])
-	return gam, mappings
+	gamma = np.reshape(M, [n1, n1])
+	return gamma, mappings
 
-def gwC_cplex(D1, D2, eng, maxtime=120):
+# Convex approximation of Gromov-Wasserstein with CPLEX solver
+def GWC_cplex(D1, D2, eng, maxtime=120):
 
 	n1, n2 = len(D1), len(D2)
 	assert n1 == n2
@@ -191,8 +189,8 @@ def gwC_cplex(D1, D2, eng, maxtime=120):
 	mappings = [np.zeros(n1, dtype=np.int32), np.zeros(n1, dtype=np.int32)]
 	for i in range(n1):	mappings[0][i] = np.argmax(M[i*n1:(i+1)*n1])
 	for i in range(n1):	mappings[1][i] = np.argmax(M[i::n1])
-	gam = np.reshape(M, [n1, n1])
-	return gam, mappings
+	gamma = np.reshape(M, [n1, n1])
+	return gamma, mappings
 
 
 
@@ -207,7 +205,7 @@ class Quantization(BaseEstimator, TransformerMixin):
 	"""
 	This is a class that implements various quantization/clustering methods.
 	"""
-	def __init__(self, n_clusters=10, method="RandomChoice", metric="euclidean"):
+	def __init__(self, n_centroids=10, method="RandomChoice", metric="euclidean"):
 		"""
 		Constructor for the Quantization class.
 
@@ -216,9 +214,9 @@ class Quantization(BaseEstimator, TransformerMixin):
 			method (str): "RandomChoice" or "KMeans". If None, no quantization is used. You can add your own method by giving it a name and implementing it in the fit method below.
 			metric (str): distance to use to find clusters.
 		"""
-		self.n_clus_, self.metric_, self.method_ = n_clusters, metric, method
+		self.n_clus_, self.metric_, self.method_ = n_centroids, metric, method
 
-	def fit(self, X, D=None):
+	def fit(self, X=None, D=None):
 		"""
 		Fit the Quantization class on a point cloud or distance matrix: compute the clusters and their centroids and store them in self.labels_, as well as a map assigning one of the centroids to each data point in self.indices_.
 	
@@ -226,16 +224,20 @@ class Quantization(BaseEstimator, TransformerMixin):
 			X (array of shape [num points, num dimensions]): point cloud
 			D (array of shape [num points, num points]): distance matrix to use if self.metric_ == "precomputed".
 		"""
+		
+		npts = X.shape[0] if self.metric_ is not "precomputed" else D.shape[0]
 		if self.method_ == "RandomChoice":
-			self.indices_ = np.random.choice(X.shape[0], self.n_clus_, replace=False)
+			self.indices_ = np.random.choice(npts, min(npts, self.n_clus_), replace=False)
 			if self.metric_ == "precomputed":
 				assert D is not None
 				self.labels_ = np.argmin(D[:, self.indices_], axis=1)
-			else:	self.labels_ = np.argmin(pairwise_distances(X, X[self.indices_,:], metric=self.metric_), axis=1)
+			else:
+				self.labels_ = np.argmin(pairwise_distances(X, X[self.indices_,:], metric=self.metric_), axis=1)
+				self.labels_[self.indices_] = np.arange(len(self.indices_))
 
 		if self.method_ is None:
-			self.indices_ = np.arange(X.shape[0])
-			self.labels_  = np.arange(X.shape[0])
+			self.indices_ = np.arange(npts)
+			self.labels_  = np.arange(npts)
 
 		if self.method_ == "KMeans":
 			clus = KMeans(n_clusters=self.n_clus_).fit(X)
@@ -247,169 +249,231 @@ class Quantization(BaseEstimator, TransformerMixin):
 		return self
 
 
-def distortion_score(X1=None, X2=None, X3=None, gamma=None, metric="euclidean", mode=2, dist_type="W", alpha=.5):
+def distortion_score(X1=None, X2=None, X12=None, D1=None, D2=None, 
+                     gamma=None, computation="1", metric="euclidean"):
 	"""
-	Compute the metric distortion associated to a matching between two datasets.
+	Compute the metric distortion associated to a matching between two datasets. The function infers the distortion algorithm based on which input is None and which isn't. There are five possibilities: 1. X1/X2 not None, X12 None, D1/D2 None; 2. X1/X2 None, X12 not None, D1/D2 None; 3. X1/X2 not None, X12 None, D1/D2 not None; 4. X1/X2 None, X12 not None, D1/D2 not None; 5. X1/X2 None, X12 None, D1/D2 not None; 
 
 	Parameters:
 		X1 (array of shape [num points 1, num dimensions]): first point cloud
 		X2 (array of shape [num points 2, num dimensions]): second point cloud
-                X3 (array of shape [num points 1, num points 2]): pairwise distances between first and second point clouds
-		gamma (array of shape [num points 1, num points 2]): probabilistic matching between X1 and X2
-		metric (str): metric to use in order to compute the distortion
-		mode (int): 1, 2 or 3. Method to use to compute the distortion. 1 is slow but does not require a lot of RAM, 3 is fast but it requires a lot of RAM. 2 is intermediate
-                dist_type (str): type of distortion to compute. Either "W", "GW", or "MX".
-                alpha (float): mixture coefficient. Only used if dist_type == "MX".
+                X12 (array of shape [num points 1, num points 2]): pairwise distances between first and second point cloud
+		D1 (array of shape [num points 1, num points 1]): pairwise distances of first point cloud
+		D2 (array of shape [num points 2, num points 2]): pairwise distances of second point cloud
+		gamma (array of shape [num points 1, num points 2]): probabilistic matching between the two data sets
+		computation (int): 1, 2 or 3. Method to use to compute the distortion. 1 is slow but does not require a lot of RAM, 3 is fast but it requires a lot of RAM. 2 is intermediate
+		metric (str): metric to use in order to compute the distortion (used only in cases 1. and 3.)
 	"""
-	if dist_type == "GW" or dist_type == "MX":
-		if metric == "precomputed":	D1, D2 = X1, X2
-		else:	D1, D2 = pairwise_distances(X1, metric=metric), pairwise_distances(X2, metric=metric)
-	if dist_type == "W" or dist_type == "MX":
-		if metric == "precomputed":	D3 = X3
-		else:	D3 = pairwise_distances(X1, X2, metric=metric)
+	if D1 is None:
+		if X1 is not None:	
+			mode = "1"                               # X1 <---> X2
+			n1, n2 = X1.shape[0], X2.shape[0]
+		elif X12 is not None:	
+			mode = "2"                               # X12
+			n1, n2 = X12.shape[0], X12.shape[1]
+		else:
+			print("Provide at least one input matrix")
+			return 0
+	else:
+		if X1 is not None:
+			mode = "3"                               # X1 <---> X2 + D1 <---> D2
+			n1, n2 = X1.shape[0], X2.shape[0]
+		elif X12 is not None:
+			mode = "4"                               # X12 + D1 <---> D2
+			n1, n2 = X12.shape[0], X12.shape[1]
+		else:
+			mode = "5"                               # D1 <---> D2
+			n1, n2 = D1.shape[0], D2.shape[0]
 
 	# Slowest, but does not need a lot of RAM
-	if mode == 1:
-		if dist_type == "GW" or dist_type == "MX":
-			scoreGW = 0
-			for i in range(len(X1)):
-				for k in range(len(X2)):
-					for j in range(len(X1)):
-						for l in range(len(X2)):
-							scoreGW += gamma[i,k] * gamma[j,l] * np.abs(D1[i,j] - D2[k,l])
-		if dist_type == "W" or dist_type == "MX":
-			scoreW = 0
-			for i in range(len(X1)):
-				for k in range(len(X2)):
-					scoreW += gamma[i,k] * D3[i,k]
+	if computation == "1":
+		if mode == "1" or mode == "2":
+			X12 = pairwise_distances(X1, X2, metric=metric) if mode == "1" else X12
+			scoreX = 0
+			for i in range(n1):
+				for k in range(n2):
+					scoreX += gamma[i,k] * X12[i,k]
+			return scoreX
+
+		elif mode == "3" or mode == "4" or mode == "5":
+			scoreD = 0
+			for i in range(n1):
+				for k in range(n2):
+					for j in range(n1):
+						for l in range(n2):
+							scoreD += gamma[i,k] * gamma[j,l] * np.abs(D1[i,j] - D2[k,l])
+
+			if mode == "3" or mode == "4":
+				X12 = pairwise_distances(X1, X2, metric=metric) if mode == "3" else X12
+				scoreX = 0
+				for i in range(n1):
+					for k in range(n2):
+						scoreX += gamma[i,k] * X12[i,k]
+				return [scoreX, scoreD]
+			if mode == "5":	return scoreD
 
 	# Intermediate
-	elif mode == 2:
-		if dist_type == "GW" or dist_type == "MX":
-			scoreGW = 0
-			for i in range(len(X1)):
-				for k in range(len(X2)):
+	elif computation == "2":
+		if mode == "1" or mode == "2":
+			X12 = pairwise_distances(X1, X2, metric=metric) if mode == "1" else X12
+			scoreX = np.sum(np.multiply(gamma, X12))
+			return scoreX
+
+		elif mode == "3" or mode == "4" or mode == "5":
+			scoreD = 0
+			for i in range(n1):
+				for k in range(n2):
 					D = np.abs(np.expand_dims(D1[i,:], -1) - np.expand_dims(D2[k,:], 0))
-					scoreGW += gamma[i,k] * np.sum(np.multiply(gamma,D))
-		if dist_type == "W" or dist_type == "MX":
-			scoreW = np.sum(np.multiply(gamma, D3))
+					scoreD += gamma[i,k] * np.sum(np.multiply(gamma,D))
+
+			if mode == "3" or mode == "4":
+				X12 = pairwise_distances(X1, X2, metric=metric) if mode == "3" else X12
+				scoreX = np.sum(np.multiply(gamma, X12))
+				return [scoreX, scoreD]
+			if mode == "5":	return scoreD
 
 	# Fastest, but needs a lot of RAM
-	elif mode == 3:
-		if dist_type == "GW" or dist_type == "MX":
+	elif computation == "3":
+		if mode == "1" or mode == "2":
+			X12 = pairwise_distances(X1, X2, metric=metric) if mode == "1" else X12
+			scoreX = np.sum(np.multiply(gamma, X12))
+			return scoreX
+
+		elif mode == "3" or mode == "4" or mode == "5":
 			G = np.abs( np.expand_dims(np.expand_dims(D1,-1),-1) - np.expand_dims(np.expand_dims(D2,0),0) )
-			scoreGW = np.sum(np.multiply(gamma, np.tensordot(G, gamma, axes=([1,3],[0,1]))))
-		if dist_type == "W" or dist_type == "MX":
-			scoreW = np.sum(np.multiply(gamma, D3))
+			scoreD = np.sum(np.multiply(gamma, np.tensordot(G, gamma, axes=([1,3],[0,1]))))
+			if mode == "3" or mode == "4":
+				X12 = pairwise_distances(X1, X2, metric=metric) if mode == "3" else X12
+				scoreX = np.sum(np.multiply(gamma, X12))
+				return [scoreX, scoreD]
+			if mode == "5":	return scoreD
 
-	if dist_type == "GW":	score = scoreGW
-	if dist_type == "W":	score = scoreW
-	if dist_type == "MX":	score = (1-alpha) * scoreGW + alpha * scoreW
-	return score
 
-def MREC(X1, X2, threshold=10, n_points=100, q_method="KMeans", metric="euclidean", backend_params={"mode": "GWNC", "num_iter": 3, "method": "L-BFGS-B"}, 
-                sparse=False, return_gamma=False, idxs1=None, idxs2=None, mapping=None, D1_full=None, D2_full=None, Z_full=None, Gamma=None, mass=None):
-
+def MREC(X1=None, X2=None, X12=None, D1=None, D2=None, D1quant=None, D2quant=None, return_gamma=False,
+         matching=MXS, matching_params={"metric": "euclidean", "alpha": .5, "epsilon": 5e-4, "tol": 1e-9, "max_iter": 1000}, 
+         quant_params={"n_centroids": 100, "method": "RandomChoice", "metric": "euclidean"}, threshold=10,
+         idxs1=None, idxs2=None, mapping=None, gamma=None, mass=None):
 	"""
-	This function implements MREC. See the associated paper "MREC: a fast and versatile tool for aligning and matching genomic data". It uses a recursive approximation to compute matchings in a fast way.
+	This function implements MREC. See the associated paper "MREC: a fast and versatile tool for aligning and matching genomic data". It uses a recursive approximation to compute matchings in a fast way. The function infers the matching algorithm based on which input is None and which isn't. There are five possibilities: 1. X1/X2 not None, X12 None, D1/D2 None; 2. X1/X2 None, X12 not None, D1/D2 None; 3. X1/X2 not None, X12 None, D1/D2 not None; 4. X1/X2 None, X12 not None, D1/D2 not None; 5. X1/X2 None, X12 None, D1/D2 not None; 
 
 	Parameters:
 		X1 (array of shape [num points 1, num dimensions]): first point cloud
 		X2 (array of shape [num points 2, num dimensions]): second point cloud
-		threshold (int): datasets with less points than this parameter will be matched arbitrarily
-		n_points (int): number of clusters and centroids used for the recursion
-		q_method (str): name of the quantization method. It should be implemented in the Quantization class above
-		metric (str): distance to use for computing and comparing the centroids. It is either a single string or a pair of strings if the two datasets have different metrics
-		backend_params (dictionary): parameters used for the black box matching function. It has to contain a key called "mode" whose value is a string specifiying the method to use and the other required keys:
-			"WS" (entropy Wasserstein):  "metric" (string, metric to use between datasets), "epsilon" (float, entropy regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations)
-			"UWS" (unbalanced entropy Wasserstein): "metric" (string, metric to use between datasets), "epsilon" (float, entropy regularization term), "delta" (float, unbalanced regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations)
-			"GWS" (entropy Gromov-Wasserstein): "metric" ((pair of) string, metrics to use for each dataset), "epsilon" (float, entropy regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations) 
-			"MXS" (entropy weighted sum of Wasserstein and Gromov-Wasserstein): "metric" (pair of (pair of) string, metrics to use for each dataset, for Wasserstein and Gromov-Wasserstein costs), "alpha" (float (between 0. and 1.), weight of Wasserstein cost), "epsilon" (float, entropy regularization term), "tol" (float, tolerance threshold for stopping Sinkhorn iterations), "max_iter" (int, maximum number of Sinkhorn iterations)
-			"GWNC" (non convex approximation of Gromov-Wasserstein): "num_iter" (int, number of non convex iterations), "sigma_m_0" (float, see https://arxiv.org/pdf/1610.05214.pdf), "mu" (float, see https://arxiv.org/pdf/1610.05214.pdf), "method" (string, optimization method, one of the methods proposed in scipy.optimize.minimize)
-			"GWC_sdpnal" (convex approximation of Gromov-Wasserstein with sdpnal): "eng" (Matlab engine), "use_birkhoff" (bool, whether to use birkhoff projections)
-			"GWC_cplex" (convex approximation of Gromov-Wasserstein with cplex)): "eng" (Matlab engine), "maxtime" (int, maximum number of seconds allowed)
-		You can use your own method by giving it a name and implementing it in this file.
-		D1_full (array of shape [num points 1, num points 1]): precomputed distance matrix of first dataset, used only if backend_params["metric"] == "precomputed" and backend_params["mode"] is not "WS"
-		D2_full (array of shape [num points 2, num points 2]): precomputed distance matrix of second dataset, used only if backend_params["metric"] == "precomputed" and backend_params["mode"] is not "WS"
-		Z_full (array of shape [num points 1, num points 2]): precomputed distance matrix between first and second datasets, used only if backend_params["metric"] == "precomputed" and backend_params["mode"] == "WS"
-		sparse (bool): whether sparse matrices are used
-		return_gamma (bool): whether to return the whole array representing the probabilistic matching, or just the mapping obtained by rounding it
+                X12 (array of shape [num points 1, num points 2]): precomputed pairwise distances/costs between first and second point cloud
+		D1 (array of shape [num points 1, num points 1]): pairwise distances of first point cloud
+		D2 (array of shape [num points 2, num points 2]): pairwise distances of second point cloud
+		D1quant (array of shape [num points 1, num points 1]): pairwise distances used for quantizing of first point cloud
+		D2quant (array of shape [num points 2, num points 2]): pairwise distances used for quantizing of second point cloud
+		return_gamma (bool): do you want the full probabilistic matching matrix?
+		matching (Python function): function to use for matching the centroids
+		matching_params (dict): additional parameters of the matching function
+		quant_params (dict): parameters of the quantization method
+		threshold (int): number of points used for stopping recursion
+		
 		the other parameters are only used internally for the recursion
 
 	Returns:
 		Gamma (array of shape [num points 1, num points 2]): probabilistic matching between X1 and X2 (returned only if return_gamma is True) 
 		matching (array of shape [num points 1]): matching for the points of X1 obtained by rounding Gamma
 	"""
-	n1, n2 = X1.shape[0], X2.shape[0]
+
+	if D1 is None:
+		if X1 is not None:	
+			mode = "1"                               # X1 <---> X2
+			n1, n2 = X1.shape[0], X2.shape[0]
+		elif X12 is not None:	
+			mode = "2"                               # X12
+			n1, n2 = X12.shape[0], X12.shape[1]
+		else:
+			print("Provide at least one input matrix")
+			return 0
+	else:
+		if X1 is not None:
+			mode = "3"                               # X1 <---> X2 + D1 <---> D2
+			n1, n2 = X1.shape[0], X2.shape[0]
+		elif X12 is not None:
+			mode = "4"                               # X12 + D1 <---> D2
+			n1, n2 = X12.shape[0], X12.shape[1]
+		else:
+			mode = "5"                               # D1 <---> D2
+			n1, n2 = D1.shape[0], D2.shape[0]
+
 	if idxs1 is None:	idxs1 = np.arange(n1)
 	if idxs2 is None:	idxs2 = np.arange(n2)
 	if mapping is None:	mapping = np.zeros(n1, dtype=np.int32)
-	if return_gamma and Gamma is None:	Gamma = np.empty([n1,n2])
-	if mass is None:	mass = 1 / n2
+	if return_gamma and gamma is None:	gamma = np.empty([n1,n2])
+	if mass is None:	mass = 1/n2
 
 	if n1 <= threshold or n2 <= threshold:
-		for i in range(len(idxs1)):	mapping[idxs1[i]] = idxs2[0]
+		for idx in idxs1:	mapping[idx] = idxs2[0]
 
 	else:
-		n_clus = min(min(n1, n2), n_points)
-		if type(metric) == str:	quantize1, quantize2 = Quantization(n_clusters=n_clus, method=q_method, metric=metric), Quantization(n_clusters=n_clus, method=q_method, metric=metric)	
-		else:	quantize1, quantize2 = Quantization(n_clusters=n_clus, method=q_method, metric=metric[0]), Quantization(n_clusters=n_clus, method=q_method, metric=metric[1])
 
-		quantize1.fit(X1, D1_full)
-		quantize2.fit(X2, D2_full)
+		n_clus = min(min(n1, n2), quant_params["n_centroids"])
+		if type(quant_params) == dict:
+			quant_tmp = {k:v for k,v in quant_params.items()}
+			quant_tmp["n_centroids"] = n_clus	
+			quantize1, quantize2 = Quantization(**quant_tmp), Quantization(**quant_tmp)	
+		elif type(quant_params) == list:
+			quant_tmp = [{k:v for k,v in quant_params[0].items()}, {k:v for k,v in quant_params[1].items()}]
+			quant_tmp[0]["n_centroids"], quant_tmp[1]["n_centroids"] = n_clus, n_clus
+			quantize1, quantize2 = Quantization(**quant_tmp[0]), Quantization(**quant_tmp[1])
+
+		quantize1.fit(X1, D1quant)
+		quantize2.fit(X2, D2quant)
 		indices1, indices2 = quantize1.indices_, quantize2.indices_
-		subX1, subX2 = X1[indices1, :], X2[indices2, :]
-		if backend_params["mode"] is not "WS" and backend_params["mode"] is not "UWS":
-			metr = backend_params["metric"] if backend_params["mode"] is not "MXS" else backend_params["metric"][0]  
-			if type(metr) == str:
-				if metr == "precomputed":	D1, D2 = D1_full[:, indices1][indices1, :], D2_full[:, indices2][indices2, :]
-				else:	D1, D2 = pairwise_distances(subX1, metric=metr), pairwise_distances(subX2, metric=metr)
-			else:
-				if metr[0] == "precomputed":	D1 = D1_full[:, indices1][indices1, :]
-				else:	D1 = pairwise_distances(subX1, metric=metr[0])
 
-				if metr[1] == "precomputed":	D2 = D2_full[:, indices2][indices2, :]
-				else:	D2 = pairwise_distances(subX2, metric=metr[1])
+		if mode == "1":
+			X1_sub, X2_sub = X1[indices1, :], X2[indices2, :]
+			prms = matching_params(X1_sub, X2_sub) if type(matching_params) is not dict else matching_params
+			gamma_sub, mappings_sub = matching(X1_sub, X2_sub, **prms)
+		elif mode == "2":
+			X12_sub = X12[indices1, :][:, indices2]
+			prms = matching_params(X12_sub) if type(matching_params) is not dict else matching_params
+			gamma_sub, mappings_sub = matching(X12_sub, **prms)
+		elif mode == "3":
+			X1_sub, X2_sub = X1[indices1, :], X2[indices2, :]
+			D1_sub, D2_sub = D1[:, indices1][indices1, :], D2[:, indices2][indices2, :]
+			prms = matching_params(X1_sub, X2_sub, D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
+			gamma_sub, mappings_sub = matching(X1_sub, X2_sub, D1_sub, D2_sub, **prms)
+		elif mode == "4":
+			X12_sub = X12[indices1, :][:, indices2]
+			D1_sub, D2_sub = D1[:, indices1][indices1, :], D2[:, indices2][indices2, :]
+			prms = matching_params(X12_sub, D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
+			gamma_sub, mappings_sub = matching(X12_sub, D1_sub, D2_sub, **prms)
+		elif mode == "5":
+			D1_sub, D2_sub = D1[:, indices1][indices1, :], D2[:, indices2][indices2, :]
+			prms = matching_params(D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
+			gamma_sub, mappings_sub = matching(D1_sub, D2_sub, **prms)
 
-		if backend_params["mode"] == "MXS":	Z = Z_full[indices1,:][:,indices2] if backend_params["metric"][1] == "precomputed" else pairwise_distances(subX1, subX2, metric=backend_params["metric"][1])
-		if backend_params["mode"] == "WS" or backend_params["mode"] == "UWS":	Z = Z_full[indices1,:][:,indices2] if backend_params["metric"] == "precomputed" else pairwise_distances(subX1, subX2, metric=backend_params["metric"])
+		m12 = mappings_sub[0]
+		l1, l2 = np.unique(quantize1.labels_), np.unique(quantize2.labels_) 
+		pops1, pops2 = [np.argwhere(quantize1.labels_ == l)[:,0] for l in l1], [np.argwhere(quantize2.labels_ == l)[:,0] for l in l2]
 
-		backend_params_wo_mode = {k: v for (k,v) in iter(backend_params.items()) if k != "mode"}
-		backend_params_wo_mode_wo_metric = {k: v for (k,v) in iter(backend_params_wo_mode.items()) if k != "metric"}
+		for i,_ in enumerate(l1):
 
-		if   backend_params["mode"] == "GWS":	gam, mapps = gwS(D1, D2, **backend_params_wo_mode_wo_metric)
-		elif backend_params["mode"] == "WS":	gam, mapps = wS(subX1, subX2, pairwise=Z, **backend_params_wo_mode)
-		elif backend_params["mode"] == "UWS":	gam, mapps = uwS(subX1, subX2, pairwise=Z, **backend_params_wo_mode)
-		elif backend_params["mode"] == "GWNC":	gam, mapps = gwNC(D1, D2, **backend_params_wo_mode_wo_metric)
-		elif backend_params["mode"] == "GWC_sdpnal":	gam, mapps = gwC_sdpnal(D1, D2, **backend_params_wo_mode_wo_metric)
-		elif backend_params["mode"] == "GWC_cplex":	gam, mapps = gwC_cplex(D1, D2, **backend_params_wo_mode_wo_metric)
-		elif backend_params["mode"] == "MXS":	gam, mapps = mixtureS(D1, D2, Z, **backend_params_wo_mode_wo_metric)
-		else:
-			print("Warning: mode not specified")
-			return 0
+			I1, I2 = pops1[i], pops2[m12[i]]
+			I1i, I2i = idxs1[I1], idxs2[I2]
+			massi = mass * gamma_sub[i,m12[i]] / np.sum(gamma_sub[i,:])
 
-		m12 = mapps[0]
-		nl1, nl2 = np.max(quantize1.labels_) + 1, np.max(quantize2.labels_) + 1
-		pops1, pops2 = [np.argwhere(quantize1.labels_ == i)[:,0] for i in range(nl1)], [np.argwhere(quantize2.labels_ == i)[:,0] for i in range(nl2)]
+			if return_gamma:	tmp = gamma[I1i, :]
+			for j,_ in enumerate(l2):
+				I2_other = pops2[j]
+				if return_gamma:	tmp[:, idxs2[I2_other]] = mass * gamma_sub[i,j] / (len(I2_other) * np.sum(gamma_sub[i,:]))
+			if return_gamma:	gamma[I1i, :] = tmp
 
-		for i in range(nl1):
+			if mode == "1":	X1i, X2i, X12i, D1i, D2i = X1[I1,:], X2[I2,:], X12, D1, D2
+			if mode == "2":	X1i, X2i, X12i, D1i, D2i = X1, X2, X12[I1,:][:,I2], D1, D2
+			if mode == "3":	X1i, X2i, X12i, D1i, D2i = X1[I1,:], X2[I2,:], X12, D1[I1,:][:,I1], D2[I2,:][:,I2]
+			if mode == "4":	X1i, X2i, X12i, D1i, D2i = X1, X2, X12[I1,:][:,I2], D1[I1,:][:,I1], D2[I2,:][:,I2]
+			if mode == "5":	X1i, X2i, X12i, D1i, D2i = X1, X2, X12, D1[I1,:][:,I1], D2[I2,:][:,I2]
 
-			I1 = pops1[i]
-			if return_gamma:	tmp = Gamma[idxs1[I1], :]
-			for j in range(nl2):
-				I2 = pops2[j]
-				if return_gamma:	tmp[:, idxs2[I2]] = mass * gam[i,j] / (len(I2) * np.sum(gam[i,:]))
-			if return_gamma:	Gamma[idxs1[I1], :] = tmp
+			if (type(quant_params) == dict and quant_params["metric"] == "precomputed") or (type(quant_params) == list and "precomputed" in [qt["metric"] for qt in quant_params]):
+				D1quanti, D2quanti = D1quant[I1,:][:,I1], D2quant[I2,:][:,I2]
+			else:	D1quanti, D2quanti = D1quant, D2quant
 
-			I2                = pops2[m12[i]]
-			popX1i, popX2i    = X1[I1, :], X2[I2, :]
-			popI1i, popI2i    = idxs1[I1], idxs2[I2]
-			Z_fulli           = Z_full[I1,:][:,I2]  if Z_full  is not None else Z_full
-			D1_fulli          = D1_full[I1,:][:,I1] if D1_full is not None else D1_full
-			D2_fulli          = D2_full[I2,:][:,I2] if D2_full is not None else D2_full
-			massi             = mass * gam[i,m12[i]] / np.sum(gam[i,:])
+			MREC(X1=X1i, X2=X2i, X12=X12i, D1=D1i, D2=D2i, D1quant=D1quanti, D2quant=D2quanti, 
+                             matching=matching, matching_params=matching_params, quant_params=quant_params, threshold=threshold,
+                             return_gamma=return_gamma, idxs1=I1i, idxs2=I2i, mapping=mapping, gamma=gamma, mass=massi)
 
-			MREC(X1=popX1i, X2=popX2i, threshold=threshold, n_points=n_points, q_method=q_method, metric=metric, backend_params=backend_params, 
-                                    idxs1=popI1i, idxs2=popI2i, mapping=mapping, D1_full=D1_fulli, D2_full=D2_fulli, Z_full=Z_fulli, Gamma=Gamma, mass=massi)
-
-	return Gamma, mapping
+	return gamma, mapping
