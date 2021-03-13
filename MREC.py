@@ -225,7 +225,7 @@ class Quantization(BaseEstimator, TransformerMixin):
 			D (array of shape [num points, num points]): distance matrix to use if self.metric_ == "precomputed".
 		"""
 		
-		npts = X.shape[0] if self.metric_ is not "precomputed" else D.shape[0]
+		npts = X.shape[0] if self.metric_ != "precomputed" else D.shape[0]
 		if self.method_ == "RandomChoice":
 			self.indices_ = np.random.choice(npts, min(npts, self.n_clus_), replace=False)
 			if self.metric_ == "precomputed":
