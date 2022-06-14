@@ -202,3 +202,6 @@ def SinkhornWassersteinMedianParameters(X1=None, X2=None, X12=None):
 		return {'metric': 'euclidean', 'reg': np.quantile(X12,.5), 'max_iter': 1000, "tol": 1e-9}
 	else:
 		return {'metric': 'euclidean', 'reg': np.quantile(pairwise_distances(X1, X2, metric='euclidean'),.5), 'max_iter': 1000, "tol": 1e-9}
+
+def SinkhornGromovWassersteinMedianParameters(D1=None, D2=None):
+	return {'epsilon': np.quantile(np.abs(D1[:20,:20,None,None]-D2[None,None,:20,:20]),.5), 'max_iter': 1000, "tol": 1e-9, "loss_fun": 'square_loss'}
