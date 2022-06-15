@@ -20,13 +20,10 @@ except ModuleNotFoundError: print("Warning: Matlab module not found, GWC_cplex a
 ####################
 
 def SinkhornGromovWasserstein(D1=None, D2=None, prms={}): #epsilon=5e-4, tol=1e-9, max_iter=1000):
-	#D1 /= D1.max()
-	#D2 /= D2.max()
 	n1, n2 = D1.shape[0], D2.shape[0]
 	d1, d2 = unif(n1), unif(n2)
 	gamma = entropic_gromov_wasserstein(D1, D2, d1, d2, **prms) #"square_loss", epsilon=epsilon, max_iter=max_iter, tol=tol)
 	mappings = [np.argmax(gamma, axis=1), np.argmax(gamma, axis=0)]
-	#return gamma, mappings
 	return mappings
 
 def SinkhornWasserstein(X1=None, X2=None, X12=None, prms={}): #metric="euclidean", epsilon=5e-4, tol=1e-09, max_iter=1000):
@@ -38,7 +35,6 @@ def SinkhornWasserstein(X1=None, X2=None, X12=None, prms={}): #metric="euclidean
 	cost = X12 if X12 is not None else pairwise_distances(X1, X2, metric=metric)
 	gamma = sinkhorn(a=(1/n1)*np.ones(n1), b=(1/n2)*np.ones(n2), M=cost, **pprms)
 	mappings = [np.argmax(gamma, axis=1), np.argmax(gamma, axis=0)]
-	#return gamma, mappings
 	return mappings
 
 def SinkhornUnbalancedWasserstein(X1=None, X2=None, X12=None, prms={}): #metric="euclidean", epsilon=5e-4, delta=5e-4, tol=1e-09, max_iter=1000):
@@ -50,7 +46,6 @@ def SinkhornUnbalancedWasserstein(X1=None, X2=None, X12=None, prms={}): #metric=
 	cost = X12 if X12 is not None else pairwise_distances(X1, X2, metric=metric)
 	gamma = sinkhorn_unbalanced(a=(1/n1)*np.ones(n1), b=(1/n2)*np.ones(n2), M=cost, **pprms)
 	mappings = [np.argmax(gamma, axis=1), np.argmax(gamma, axis=0)]
-	#return gamma, mappings
 	return mappings
 
 def SinkhornWassersteinGromovWasserstein(X1=None, X2=None, X12=None, D1=None, D2=None, prms={}): #metric="euclidean", alpha=.5, epsilon=5e-4, tol=1e-9, max_iter=1000):
@@ -77,7 +72,6 @@ def SinkhornWassersteinGromovWasserstein(X1=None, X2=None, X12=None, D1=None, D2
 			if cpt % 10 == 0:	err = np.linalg.norm(gamma - gamma_prev)
 
 	mappings = [np.argmax(gamma, axis=1), np.argmax(gamma, axis=0)]
-	#return gamma, mappings
 	return mappings
 
 def lagrangian(x, Gamma, A, b, sigma_m, lambda_m):
@@ -210,5 +204,4 @@ def SinkhornWassersteinMedianParameters(X1=None, X2=None, X12=None):
 def SinkhornGromovWassersteinMedianParameters(D1=None, D2=None):
 	epsilon = np.quantile(np.abs(D1[:40,:40,None,None]-D2[None,None,:40,:40]),.5)
 	epsilon = epsilon if epsilon > 0 else 1.
-	print(epsilon)
 	return {'epsilon': np.quantile(np.abs(D1[:40,:40,None,None]-D2[None,None,:40,:40]),.5), 'max_iter': 1000, "tol": 1e-9, "loss_fun": 'square_loss'}

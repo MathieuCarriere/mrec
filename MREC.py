@@ -208,31 +208,30 @@ def MREC(X1=None, X2=None, X12=None, D1=None, D2=None, D1quant=None, D2quant=Non
 					
 		indices1, labels1 = quantization1(X1, D1quant, prms1)
 		indices2, labels2 = quantization2(X2, D2quant, prms2)
+		X1_sub = X1[indices1,:] if X1 is not None else X1
+		X2_sub = X2[indices2,:] if X2 is not None else X2
+		X12_sub = X12[indices1,:][:,indices2] if X12 is not None else X12
+		D1_sub = D1[indices1,:][:,indices1] if D1 is not None else D1
+		D2_sub = D2[indices2,:][:,indices2] if D2 is not None else D2
+
 
 		if mode == "1":
-			X1_sub, X2_sub = X1[indices1, :], X2[indices2, :]
-			prms = matching_params(X1_sub, X2_sub, X12) if type(matching_params) is not dict else matching_params
-			mappings_sub = matching(X1_sub, X2_sub, X12, prms)
+			prms = matching_params(X1_sub, X2_sub, X12_sub) if type(matching_params) is not dict else matching_params
+			mappings_sub = matching(X1_sub, X2_sub, X12_sub, prms)
 
 		elif mode == "2":
-			X12_sub = X12[indices1, :][:, indices2]
-			prms = matching_params(X1, X2, X12_sub) if type(matching_params) is not dict else matching_params
-			mappings_sub = matching(X1, X2, X12_sub, prms)
+			prms = matching_params(X12_sub) if type(matching_params) is not dict else matching_params
+			mappings_sub = matching(X12_sub, prms)
 
 		elif mode == "3":
-			X1_sub, X2_sub = X1[indices1, :], X2[indices2, :]
-			D1_sub, D2_sub = D1[:, indices1][indices1, :], D2[:, indices2][indices2, :]
-			prms = matching_params(X1_sub, X2_sub, X12, D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
-			mappings_sub = matching(X1_sub, X2_sub, X12, D1_sub, D2_sub, prms)
+			prms = matching_params(X1_sub, X2_sub, D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
+			mappings_sub = matching(X1_sub, X2_sub, D1_sub, D2_sub, prms)
 
 		elif mode == "4":
-			X12_sub = X12[indices1, :][:, indices2]
-			D1_sub, D2_sub = D1[:, indices1][indices1, :], D2[:, indices2][indices2, :]
-			prms = matching_params(X1, X2, X12_sub, D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
-			mappings_sub = matching(X1, X2, X12_sub, D1_sub, D2_sub, prms)
+			prms = matching_params(X12_sub, D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
+			mappings_sub = matching(X12_sub, D1_sub, D2_sub, prms)
 
 		elif mode == "5":
-			D1_sub, D2_sub = D1[:, indices1][indices1, :], D2[:, indices2][indices2, :]
 			prms = matching_params(D1_sub, D2_sub) if type(matching_params) is not dict else matching_params
 			mappings_sub = matching(D1_sub, D2_sub, prms)
 
@@ -246,7 +245,7 @@ def MREC(X1=None, X2=None, X12=None, D1=None, D2=None, D1quant=None, D2quant=Non
 			I1i, I2i = idxs1[I1], idxs2[I2]
 
 			X1i = X1[I1,:] if X1 is not None else X1
-			X2i = X2[I2,:] if X1 is not None else X2
+			X2i = X2[I2,:] if X2 is not None else X2
 			X12i = X12[I1,:][:,I2] if X12 is not None else X12
 			D1i = D1[I1,:][:,I1] if D1 is not None else D1
 			D2i = D2[I2,:][:,I2] if D2 is not None else D2
