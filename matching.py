@@ -93,7 +93,7 @@ def lagrangian_hess(x, Gamma, A, b, sigma_m, lambda_m):
 	H = 2*Gamma + sigma_m*np.matmul(A.T,A)
 	return H
 
-def NonConvexGromovWasserstein(D1=None, D2=None, prms={}): #num_iter=15, sigma_m_0=5., mu=10., method="L-BFGS-B", map_init=None, verbose=False):
+def NonConvexGromovHausdorff(D1=None, D2=None, prms={}): #num_iter=15, sigma_m_0=5., mu=10., method="L-BFGS-B", map_init=None, verbose=False):
 
 	num_iter, sigma_m_0, mu, method, map_init, verbose = prms['num_iter'], prms['sigma_m_0'], prms['mu'], prms['method'], prms['map_init'], prms['verbose']
 
@@ -144,7 +144,7 @@ def NonConvexGromovWasserstein(D1=None, D2=None, prms={}): #num_iter=15, sigma_m
 	#return gamma, mappings
 	return mappings
 
-def SDPNALConvexGromovWasserstein(D1=None, D2=None, prms={}): #eng, use_birkhoff=False):
+def SDPNALConvexGromovHausdorff(D1=None, D2=None, prms={}): #eng, use_birkhoff=False):
 
 	eng, use_birkhoff = prms['eng'], prms['use_birkhoff']
 
@@ -170,7 +170,7 @@ def SDPNALConvexGromovWasserstein(D1=None, D2=None, prms={}): #eng, use_birkhoff
 	#return gamma, mappings
 	return mappings
 
-def CPLEXConvexGromovWasserstein(D1=None, D2=None, prms={}): #eng, maxtime=120):
+def CPLEXConvexGromovHausdorff(D1=None, D2=None, prms={}): #eng, maxtime=120):
 
 	eng, maxtime = prms['eng'], prms['maxtime']
 
@@ -199,9 +199,16 @@ def CPLEXConvexGromovWasserstein(D1=None, D2=None, prms={}): #eng, maxtime=120):
 
 def SinkhornWassersteinMedianParameters(X1=None, X2=None, X12=None):
 	if X12 is not None:
-		return {'metric': 'euclidean', 'reg': np.quantile(X12,.5), 'max_iter': 1000, "tol": 1e-9}
+		reg = np.quantile(X12,.5)
+		reg = reg if reg > 0 else 1.
+		return {'metric': 'euclidean', 'reg': reg, 'max_iter': 1000, "tol": 1e-9}
 	else:
-		return {'metric': 'euclidean', 'reg': np.quantile(pairwise_distances(X1, X2, metric='euclidean'),.5), 'max_iter': 1000, "tol": 1e-9}
+		reg = np.quantile(pairwise_distances(X1, X2, metric='euclidean'),.5)
+		reg = reg if reg > 0 else 1.
+		return {'metric': 'euclidean', 'reg': reg, 'max_iter': 1000, "tol": 1e-9}
 
 def SinkhornGromovWassersteinMedianParameters(D1=None, D2=None):
-	return {'epsilon': np.quantile(np.abs(D1[:20,:20,None,None]-D2[None,None,:20,:20]),.5), 'max_iter': 1000, "tol": 1e-9, "loss_fun": 'square_loss'}
+	epsilon = np.quantile(np.abs(D1[:40,:40,None,None]-D2[None,None,:40,:40]),.5)
+	epsilon = epsilon if epsilon > 0 else 1.
+	print(epsilon)
+	return {'epsilon': np.quantile(np.abs(D1[:40,:40,None,None]-D2[None,None,:40,:40]),.5), 'max_iter': 1000, "tol": 1e-9, "loss_fun": 'square_loss'}
